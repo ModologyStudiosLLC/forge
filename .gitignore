@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# OpenCascade WASM (63MB — copy from node_modules/opencascade.js/dist/)
+public/wasm/

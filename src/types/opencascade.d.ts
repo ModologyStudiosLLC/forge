@@ -1,4 +1,5 @@
 declare module "opencascade.js" {
-  function initOpenCascade(options?: { locateFile?: (f: string) => string }): Promise<any>;
+  function initOpenCascade(): Promise<any>;
+  export { initOpenCascade };
   export default initOpenCascade;
 }

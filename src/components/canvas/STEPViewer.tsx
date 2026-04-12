@@ -22,10 +22,10 @@ function useOpenCascade() {
 
   useEffect(() => {
     import("opencascade.js").then(mod => {
-      const initOC = mod.default ?? mod;
-      initOC({
-        locateFile: (f: string) => `/wasm/${f}`,
-      }).then((instance: any) => setOc(instance));
+      // Package exports { initOpenCascade } and handles its own WASM path
+      const init = mod.initOpenCascade ?? mod.default ?? mod;
+      const result = typeof init === "function" ? init() : init;
+      Promise.resolve(result).then((instance: any) => setOc(instance));
     }).catch(() => {
       // OC not available in this environment — viewer will show drop zone
     });
