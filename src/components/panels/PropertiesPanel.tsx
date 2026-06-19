@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useForgeStore } from "@/lib/store/forgeStore";
 
 const SEVERITY_COLOR = {
@@ -21,11 +22,89 @@ export default function PropertiesPanel() {
     measurements,
     dfmIssues,
     selectionMode,
+    modelName,
+    aiSuggestions,
+    aiLoading,
+    setAISuggestion,
+    setAILoading,
   } = useForgeStore();
 
   const dims = selectedFaceId ? measurements[selectedFaceId] : null;
   const faceDFM = dfmIssues.filter(i => i.faceId === selectedFaceId);
   const globalDFM = dfmIssues.filter(i => !i.faceId);
+  const currentSuggestion = selectedFaceId ? aiSuggestions[selectedFaceId] : null;
+  const traceInputRef = useRef<HTMLInputElement>(null);
+  const lastFetchedRef = useRef<string | null>(null);
+
+  // Auto-fetch suggestion when a face with dimensions is selected
+  useEffect(() => {
+    if (!selectedFaceId || !selectedFace || !dims) return;
+    if (aiSuggestions[selectedFaceId]) return; // already cached
+    if (lastFetchedRef.current === selectedFaceId) return;
+
+    lastFetchedRef.current = selectedFaceId;
+    setAILoading(true);
+
+    fetch("/api/cad/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        modelName,
+        faceId: selectedFaceId,
+        dims,
+        face: {
+          area: selectedFace.area,
+          normal: selectedFace.normal,
+          center: selectedFace.center,
+        },
+      }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.suggestion) setAISuggestion(selectedFaceId, data.suggestion);
+      })
+      .catch(() => setAISuggestion(selectedFaceId, "Suggestion unavailable."))
+      .finally(() => setAILoading(false));
+  }, [selectedFaceId, dims]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleTraceUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !selectedFaceId || !dims || !selectedFace) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      const [header, b64] = dataUrl.split(",");
+      const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/png";
+
+      setAILoading(true);
+      try {
+        const r = await fetch("/api/cad/suggest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modelName,
+            faceId: selectedFaceId,
+            dims,
+            face: {
+              area: selectedFace.area,
+              normal: selectedFace.normal,
+              center: selectedFace.center,
+            },
+            traceBase64: b64,
+            traceMimeType: mimeType,
+          }),
+        });
+        const data = await r.json();
+        if (data.suggestion) setAISuggestion(selectedFaceId, data.suggestion);
+      } catch {
+        // keep existing suggestion
+      } finally {
+        setAILoading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
 
   return (
     <div style={{
@@ -114,20 +193,78 @@ export default function PropertiesPanel() {
           </section>
         )}
 
-        {/* AI Rail placeholder */}
+        {/* AI Rail */}
         <section>
-          <div style={sectionHeader}>AI Rail</div>
-          <div style={{
-            background: "var(--surface-2)",
-            border: "1px solid var(--border)",
-            borderRadius: "6px",
-            padding: "10px",
-            color: "var(--text-muted)",
-            fontSize: "11px",
-            fontStyle: "italic",
-          }}>
-            Select a face to get AI suggestions.
+          <div style={{ ...sectionHeader, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>AI Rail</span>
+            {selectedFaceId && dims && (
+              <>
+                <button
+                  onClick={() => traceInputRef.current?.click()}
+                  title="Add product_trace reference image"
+                  style={{
+                    background: "none",
+                    border: "1px solid var(--border)",
+                    borderRadius: "4px",
+                    color: "var(--text-muted)",
+                    fontSize: "9px",
+                    padding: "2px 6px",
+                    cursor: "pointer",
+                    letterSpacing: "0.05em",
+                  }}
+                >
+                  + trace
+                </button>
+                <input
+                  ref={traceInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={handleTraceUpload}
+                />
+              </>
+            )}
           </div>
+
+          {aiLoading ? (
+            <div style={{
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: "6px",
+              padding: "10px",
+              color: "var(--text-muted)",
+              fontSize: "11px",
+            }}>
+              <span style={{ opacity: 0.7 }}>Analyzing face...</span>
+            </div>
+          ) : currentSuggestion ? (
+            <div style={{
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: "6px",
+              padding: "10px",
+              color: "var(--text)",
+              fontSize: "11px",
+              lineHeight: "1.6",
+              whiteSpace: "pre-wrap",
+            }}>
+              {currentSuggestion}
+            </div>
+          ) : (
+            <div style={{
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: "6px",
+              padding: "10px",
+              color: "var(--text-muted)",
+              fontSize: "11px",
+              fontStyle: "italic",
+            }}>
+              {selectedFaceId && !dims
+                ? "Waiting for face dimensions..."
+                : "Select a face to get AI suggestions."}
+            </div>
+          )}
         </section>
       </div>
     </div>
