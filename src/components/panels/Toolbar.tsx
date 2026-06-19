@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForgeStore, SelectionMode } from "@/lib/store/forgeStore";
 
 const MODES: { value: SelectionMode; label: string }[] = [
@@ -9,8 +10,44 @@ const MODES: { value: SelectionMode; label: string }[] = [
   { value: "body",   label: "Body" },
 ];
 
+type SendState =
+  | { status: "idle" }
+  | { status: "sending" }
+  | { status: "ok"; price: number; quoteId: number }
+  | { status: "error"; message: string };
+
 export default function Toolbar() {
-  const { selectionMode, setSelectionMode, pushPullActive, setPushPullActive, modelName } = useForgeStore();
+  const { selectionMode, setSelectionMode, pushPullActive, setPushPullActive, modelName, stepBuffer } = useForgeStore();
+  const [send, setSend] = useState<SendState>({ status: "idle" });
+
+  const canSend = !!stepBuffer && !!modelName && send.status !== "sending";
+
+  async function handleSendToAlloy() {
+    if (!stepBuffer || !modelName) return;
+
+    setSend({ status: "sending" });
+
+    const form = new FormData();
+    form.append("file", new Blob([stepBuffer], { type: "application/octet-stream" }), modelName);
+    form.append("material", "17-4PH");
+    form.append("quantity", "1");
+
+    try {
+      const res = await fetch("/api/alloy/quote", { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setSend({ status: "error", message: data.error ?? "Quote failed" });
+        setTimeout(() => setSend({ status: "idle" }), 4000);
+        return;
+      }
+
+      setSend({ status: "ok", price: data.quoted_price, quoteId: data.id });
+    } catch {
+      setSend({ status: "error", message: "Could not reach Alloy" });
+      setTimeout(() => setSend({ status: "idle" }), 4000);
+    }
+  }
 
   return (
     <div style={{
@@ -94,8 +131,8 @@ export default function Toolbar() {
         </div>
       )}
 
-      {/* Placeholder actions */}
-      <div style={{ display: "flex", gap: "8px" }}>
+      {/* Actions */}
+      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
         {["Undo", "Redo"].map(label => (
           <button
             key={label}
@@ -113,18 +150,48 @@ export default function Toolbar() {
             {label}
           </button>
         ))}
-        <button style={{
-          padding: "3px 12px",
-          borderRadius: "4px",
-          border: "none",
-          background: "var(--accent)",
-          color: "#fff",
-          fontSize: "11px",
-          fontWeight: 600,
-          cursor: "pointer",
-          opacity: 0.5,
-        }}>
-          Export
+
+        {/* Quote result inline */}
+        {send.status === "ok" && (
+          <a
+            href="http://localhost:3000"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setSend({ status: "idle" })}
+            style={{
+              fontSize: "11px",
+              color: "var(--measure)",
+              fontFamily: "var(--font-mono)",
+              textDecoration: "none",
+              borderBottom: "1px solid currentColor",
+            }}
+          >
+            ~${send.price.toFixed(2)} → view in Alloy
+          </a>
+        )}
+        {send.status === "error" && (
+          <span style={{ fontSize: "11px", color: "var(--dfm-fail)", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {send.message}
+          </span>
+        )}
+
+        <button
+          onClick={handleSendToAlloy}
+          disabled={!canSend}
+          style={{
+            padding: "3px 12px",
+            borderRadius: "4px",
+            border: "none",
+            background: canSend ? "var(--accent)" : "var(--accent)",
+            color: "#fff",
+            fontSize: "11px",
+            fontWeight: 600,
+            cursor: canSend ? "pointer" : "not-allowed",
+            opacity: canSend ? 1 : 0.5,
+            transition: "opacity 0.1s",
+          }}
+        >
+          {send.status === "sending" ? "Sending..." : "Send to Alloy"}
         </button>
       </div>
     </div>
