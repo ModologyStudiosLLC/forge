@@ -15,6 +15,10 @@ export async function POST(req: NextRequest) {
       traceMimeType?: string;
     };
 
+    if (!faceId || !dims || !face) {
+      return NextResponse.json({ error: "Missing required fields: faceId, dims, face" }, { status: 400 });
+    }
+
     const dimSummary = `${dims.width.toFixed(2)} mm W × ${dims.height.toFixed(2)} mm H × ${dims.depth.toFixed(2)} mm D`;
     const normalSummary = face.normal
       ? `normal [${face.normal.map(v => v.toFixed(2)).join(", ")}]`

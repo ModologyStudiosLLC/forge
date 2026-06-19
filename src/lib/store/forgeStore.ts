@@ -37,7 +37,6 @@ interface ForgeState {
 
   // AI Rail
   aiSuggestions: Record<string, string>;  // faceId → suggestion text
-  aiLoading: boolean;
 
   // Actions
   loadStepFile: (file: File) => void;
@@ -47,7 +46,6 @@ interface ForgeState {
   setPushPullActive: (active: boolean) => void;
   setDFMIssues: (issues: DFMIssue[]) => void;
   setAISuggestion: (faceId: string, text: string) => void;
-  setAILoading: (loading: boolean) => void;
   clearModel: () => void;
 }
 
@@ -62,7 +60,6 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   dfmIssues: [],
   pushPullActive: false,
   aiSuggestions: {},
-  aiLoading: false,
 
   loadStepFile: (file: File) => {
     const prev = get().stepUrl;
@@ -100,8 +97,6 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     aiSuggestions: { ...state.aiSuggestions, [faceId]: text },
   })),
 
-  setAILoading: (loading) => set({ aiLoading: loading }),
-
   clearModel: () => {
     const prev = get().stepUrl;
     if (prev) URL.revokeObjectURL(prev);
@@ -114,7 +109,6 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       measurements: {},
       dfmIssues: [],
       aiSuggestions: {},
-      aiLoading: false,
     });
   },
 }));

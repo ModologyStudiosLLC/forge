@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForgeStore } from "@/lib/store/forgeStore";
 
 const SEVERITY_COLOR = {
@@ -24,9 +24,7 @@ export default function PropertiesPanel() {
     selectionMode,
     modelName,
     aiSuggestions,
-    aiLoading,
     setAISuggestion,
-    setAILoading,
   } = useForgeStore();
 
   const dims = selectedFaceId ? measurements[selectedFaceId] : null;
@@ -34,7 +32,10 @@ export default function PropertiesPanel() {
   const globalDFM = dfmIssues.filter(i => !i.faceId);
   const currentSuggestion = selectedFaceId ? aiSuggestions[selectedFaceId] : null;
   const traceInputRef = useRef<HTMLInputElement>(null);
+  // tracks which faceId has an in-flight request — per-face so rapid clicks don't corrupt loading state
+  const [loadingFaceId, setLoadingFaceId] = useState<string | null>(null);
   const lastFetchedRef = useRef<string | null>(null);
+  const aiLoading = loadingFaceId === selectedFaceId;
 
   // Auto-fetch suggestion when a face with dimensions is selected
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function PropertiesPanel() {
     if (lastFetchedRef.current === selectedFaceId) return;
 
     lastFetchedRef.current = selectedFaceId;
-    setAILoading(true);
+    setLoadingFaceId(selectedFaceId);
 
     fetch("/api/cad/suggest", {
       method: "POST",
@@ -64,7 +65,7 @@ export default function PropertiesPanel() {
         if (data.suggestion) setAISuggestion(selectedFaceId, data.suggestion);
       })
       .catch(() => setAISuggestion(selectedFaceId, "Suggestion unavailable."))
-      .finally(() => setAILoading(false));
+      .finally(() => setLoadingFaceId(prev => prev === selectedFaceId ? null : prev));
   }, [selectedFaceId, dims]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleTraceUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -77,7 +78,7 @@ export default function PropertiesPanel() {
       const [header, b64] = dataUrl.split(",");
       const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/png";
 
-      setAILoading(true);
+      setLoadingFaceId(selectedFaceId);
       try {
         const r = await fetch("/api/cad/suggest", {
           method: "POST",
@@ -100,7 +101,9 @@ export default function PropertiesPanel() {
       } catch {
         // keep existing suggestion
       } finally {
-        setAILoading(false);
+        setLoadingFaceId(prev => prev === selectedFaceId ? null : prev);
+        // reset so same file can be uploaded again
+        e.target.value = "";
       }
     };
     reader.readAsDataURL(file);
