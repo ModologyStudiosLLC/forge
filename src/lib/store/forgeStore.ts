@@ -49,6 +49,7 @@ interface ForgeState {
 
   // Actions
   loadStepFile: (file: File) => void;
+  loadStepBuffer: (buf: ArrayBuffer, name: string) => void;
   loadMeshFaces: (faces: MeshFace[], name: string) => void;
   setSelectionMode: (mode: SelectionMode) => void;
   selectFace: (face: SelectedFace | null) => void;
@@ -73,20 +74,22 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   aiSuggestions: {},
 
   loadStepFile: (file: File) => {
+    file.arrayBuffer().then(buf => get().loadStepBuffer(buf, file.name));
+  },
+
+  loadStepBuffer: (buf: ArrayBuffer, name: string) => {
     const prev = get().stepUrl;
     if (prev) URL.revokeObjectURL(prev);
 
-    file.arrayBuffer().then(buf => {
-      const url = URL.createObjectURL(new Blob([buf], { type: "application/octet-stream" }));
-      set({
-        modelName: file.name,
-        stepUrl: url,
-        stepBuffer: buf,
-        meshFaces: null,
-        selectedFaceId: null,
-        selectedFace: null,
-        dfmIssues: [],
-      });
+    const url = URL.createObjectURL(new Blob([buf], { type: "application/octet-stream" }));
+    set({
+      modelName: name,
+      stepUrl: url,
+      stepBuffer: buf,
+      meshFaces: null,
+      selectedFaceId: null,
+      selectedFace: null,
+      dfmIssues: [],
     });
   },
 
