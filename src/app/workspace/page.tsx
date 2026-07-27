@@ -25,9 +25,39 @@ const STEPViewer = dynamic(() => import("@/components/canvas/STEPViewer"), {
   ),
 });
 
+type ImageUploadState =
+  | { status: "idle" }
+  | { status: "generating" }
+  | { status: "error"; message: string };
+
 export default function WorkspacePage() {
   const { modelName } = useForgeStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const [imageUpload, setImageUpload] = useState<ImageUploadState>({ status: "idle" });
+
+  const handleImageFile = useCallback(async (file: File) => {
+    setImageUpload({ status: "generating" });
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch("/api/cad/image23d", { method: "POST", body: form });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setImageUpload({ status: "error", message: data.error ?? "Generation failed" });
+        setTimeout(() => setImageUpload({ status: "idle" }), 4000);
+        return;
+      }
+
+      useForgeStore.getState().loadMeshFaces(data.faces, file.name.replace(/\.[^.]+$/, "") + ".glb");
+      setImageUpload({ status: "idle" });
+    } catch {
+      setImageUpload({ status: "error", message: "Could not reach TripoSR" });
+      setTimeout(() => setImageUpload({ status: "idle" }), 4000);
+    }
+  }, []);
 
   const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -95,6 +125,43 @@ export default function WorkspacePage() {
               if (file) useForgeStore.getState().loadStepFile(file);
             }}
           />
+
+          <button
+            onClick={() => imageInputRef.current?.click()}
+            disabled={imageUpload.status === "generating"}
+            style={{
+              background: "var(--surface-2)",
+              border: "1px dashed var(--border)",
+              borderRadius: "6px",
+              padding: "12px 8px",
+              color: "var(--text-muted)",
+              fontSize: "11px",
+              cursor: imageUpload.status === "generating" ? "not-allowed" : "pointer",
+              opacity: imageUpload.status === "generating" ? 0.5 : 1,
+              textAlign: "center",
+              transition: "border-color 0.15s",
+            }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--accent)")}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--border)")}
+          >
+            {imageUpload.status === "generating" ? "Generating…" : "+ Image → 3D"}
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) handleImageFile(file);
+              e.target.value = "";
+            }}
+          />
+          {imageUpload.status === "error" && (
+            <div style={{ fontSize: "11px", color: "var(--dfm-fail)" }}>
+              {imageUpload.message}
+            </div>
+          )}
 
           {modelName && (
             <div style={{

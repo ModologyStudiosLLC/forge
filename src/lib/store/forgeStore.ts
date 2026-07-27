@@ -15,11 +15,20 @@ export interface DFMIssue {
   faceId?: string;
 }
 
+export interface MeshFace {
+  id: string;
+  positions: number[];
+  normals: number[];
+  indices: number[];
+  center: [number, number, number];
+}
+
 interface ForgeState {
   // Model
   modelName: string | null;
   stepUrl: string | null;        // object URL for loaded STEP file
   stepBuffer: ArrayBuffer | null;
+  meshFaces: MeshFace[] | null;  // set when the model came from image→3D instead of a STEP file
 
   // Selection
   selectionMode: SelectionMode;
@@ -40,6 +49,7 @@ interface ForgeState {
 
   // Actions
   loadStepFile: (file: File) => void;
+  loadMeshFaces: (faces: MeshFace[], name: string) => void;
   setSelectionMode: (mode: SelectionMode) => void;
   selectFace: (face: SelectedFace | null) => void;
   setMeasurements: (faceId: string, dims: { width: number; height: number; depth: number }) => void;
@@ -53,6 +63,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   modelName: null,
   stepUrl: null,
   stepBuffer: null,
+  meshFaces: null,
   selectionMode: "face",
   selectedFaceId: null,
   selectedFace: null,
@@ -71,10 +82,25 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
         modelName: file.name,
         stepUrl: url,
         stepBuffer: buf,
+        meshFaces: null,
         selectedFaceId: null,
         selectedFace: null,
         dfmIssues: [],
       });
+    });
+  },
+
+  loadMeshFaces: (faces, name) => {
+    const prev = get().stepUrl;
+    if (prev) URL.revokeObjectURL(prev);
+    set({
+      modelName: name,
+      stepUrl: null,
+      stepBuffer: null,
+      meshFaces: faces,
+      selectedFaceId: null,
+      selectedFace: null,
+      dfmIssues: [],
     });
   },
 
@@ -104,6 +130,7 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       modelName: null,
       stepUrl: null,
       stepBuffer: null,
+      meshFaces: null,
       selectedFaceId: null,
       selectedFace: null,
       measurements: {},

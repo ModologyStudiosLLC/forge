@@ -195,11 +195,31 @@ function DropZone() {
 // ── Main viewer ───────────────────────────────────────────────────────────────
 
 export default function STEPViewer() {
-  const { stepBuffer, modelName, selectFace, setMeasurements, setDFMIssues } = useForgeStore();
+  const { stepBuffer, meshFaces, modelName, selectFace, setMeasurements, setDFMIssues } = useForgeStore();
   const [meshes, setMeshes] = useState<ParsedMesh[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastBuffer = useRef<ArrayBuffer | null>(null);
+  const lastMeshFaces = useRef<FaceData[] | null>(null);
+
+  const applyFaces = useCallback((faces: FaceData[]) => {
+    const parsed: ParsedMesh[] = faces.map(f => ({
+      geometry: buildGeometry(f),
+      faceId: f.id,
+      center: f.center,
+    }));
+    setMeshes(parsed);
+
+    // DFM is a secondary pass — a failure here shouldn't break the viewer.
+    fetch("/api/cad/dfm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ faces }),
+    })
+      .then(res => res.json())
+      .then(data => setDFMIssues(data.issues ?? []))
+      .catch(e => console.error("DFM analysis failed:", e));
+  }, [setDFMIssues]);
 
   useEffect(() => {
     if (!stepBuffer || stepBuffer === lastBuffer.current) return;
@@ -209,27 +229,18 @@ export default function STEPViewer() {
     setMeshes([]);
 
     parseSTEP(stepBuffer, modelName ?? "model.step")
-      .then(faces => {
-        const parsed: ParsedMesh[] = faces.map(f => ({
-          geometry: buildGeometry(f),
-          faceId: f.id,
-          center: f.center,
-        }));
-        setMeshes(parsed);
-
-        // DFM is a secondary pass — a failure here shouldn't break the viewer.
-        fetch("/api/cad/dfm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ faces }),
-        })
-          .then(res => res.json())
-          .then(data => setDFMIssues(data.issues ?? []))
-          .catch(e => console.error("DFM analysis failed:", e));
-      })
+      .then(faces => applyFaces(faces))
       .catch(e => setError(e.message ?? "Failed to parse STEP file."))
       .finally(() => setLoading(false));
-  }, [stepBuffer, modelName]);
+  }, [stepBuffer, modelName, applyFaces]);
+
+  useEffect(() => {
+    if (!meshFaces || meshFaces === lastMeshFaces.current) return;
+    lastMeshFaces.current = meshFaces;
+    setError(null);
+    setMeshes([]);
+    applyFaces(meshFaces);
+  }, [meshFaces, applyFaces]);
 
   const handleFaceClick = useCallback(
     (faceId: string, geo: THREE.BufferGeometry, center: [number, number, number]) => {
