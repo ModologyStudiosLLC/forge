@@ -62,6 +62,7 @@ export default function PropertiesPanel() {
     bom,
     setBOM,
     meshFaces,
+    stepBuffer,
   } = useForgeStore();
 
   const dims = selectedFaceId ? measurements[selectedFaceId] : null;
@@ -75,6 +76,9 @@ export default function PropertiesPanel() {
   const aiLoading = loadingFaceId === selectedFaceId;
   const [bomLoading, setBomLoading] = useState(false);
   const [bomError, setBomError] = useState<string | null>(null);
+  const [gcodeLoading, setGcodeLoading] = useState(false);
+  const [gcodeError, setGcodeError] = useState<string | null>(null);
+  const [gcodeUrl, setGcodeUrl] = useState<string | null>(null);
 
   // Auto-calculate BOM whenever the loaded part's volume or chosen material changes
   useEffect(() => {
@@ -94,6 +98,29 @@ export default function PropertiesPanel() {
       .catch(e => setBomError(e.message ?? "BOM calculation failed"))
       .finally(() => setBomLoading(false));
   }, [volumeMm3, material]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleGenerateGcode() {
+    if (!stepBuffer) return;
+    setGcodeLoading(true);
+    setGcodeError(null);
+    if (gcodeUrl) URL.revokeObjectURL(gcodeUrl);
+    setGcodeUrl(null);
+
+    const formData = new FormData();
+    formData.append("file", new Blob([stepBuffer], { type: "application/octet-stream" }), modelName ?? "model.step");
+
+    try {
+      const res = await fetch("/api/cad/gcode", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const blob = new Blob([data.gcode], { type: "text/plain" });
+      setGcodeUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setGcodeError(e instanceof Error ? e.message : "G-code generation failed");
+    } finally {
+      setGcodeLoading(false);
+    }
+  }
 
   // Auto-fetch suggestion when a face with dimensions is selected
   useEffect(() => {
@@ -291,6 +318,59 @@ export default function PropertiesPanel() {
                 </div>
               </>
             ) : null}
+          </section>
+        )}
+
+        {/* G-code — 3-axis roughing pass, fixed default preset (6mm endmill, no parameter UI yet) */}
+        {modelName && (
+          <section style={{ marginBottom: "16px" }}>
+            <div style={sectionHeader}>G-code (3-axis roughing)</div>
+            {!stepBuffer ? (
+              <div style={{ color: "var(--text-muted)", fontSize: "11px", fontStyle: "italic" }}>
+                G-code needs a real CAD solid — not available for image→3D meshes yet.
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={handleGenerateGcode}
+                  disabled={gcodeLoading}
+                  style={{
+                    width: "100%",
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "4px",
+                    color: "var(--text)",
+                    fontSize: "11px",
+                    padding: "6px 8px",
+                    cursor: gcodeLoading ? "default" : "pointer",
+                  }}
+                >
+                  {gcodeLoading ? "Generating…" : "Generate G-code"}
+                </button>
+                {gcodeError && (
+                  <div style={{ color: "var(--dfm-fail)", fontSize: "11px", marginTop: "6px" }}>
+                    {gcodeError}
+                  </div>
+                )}
+                {gcodeUrl && (
+                  <a
+                    href={gcodeUrl}
+                    download={`${(modelName ?? "model").replace(/\.(step|stp)$/i, "")}.ngc`}
+                    style={{
+                      display: "block",
+                      marginTop: "6px",
+                      fontSize: "11px",
+                      color: "var(--accent, #3B82F6)",
+                    }}
+                  >
+                    Download .ngc
+                  </a>
+                )}
+                <div style={{ color: "var(--text-muted)", fontSize: "10px", marginTop: "6px", lineHeight: "1.5" }}>
+                  Fixed preset: 6mm flat endmill, 2mm stepdown, 50% stepover, 5mm stock margin. No parameter picker yet.
+                </div>
+              </>
+            )}
           </section>
         )}
 
