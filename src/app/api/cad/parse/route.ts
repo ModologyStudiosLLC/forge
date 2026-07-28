@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getOpenCascade } from "@/lib/opencascade";
 
 // OpenCascade runs server-side (Node.js) — it uses require("fs") internally
 // and cannot be bundled for the browser.
-let ocInstance: any = null;
-
-async function getOC() {
-  if (ocInstance) return ocInstance;
-  const { initOpenCascade } = await import("opencascade.js");
-  ocInstance = await initOpenCascade();
-  return ocInstance;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,7 +11,7 @@ export async function POST(req: NextRequest) {
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const oc = await getOC();
+    const oc = await getOpenCascade();
 
     // Write STEP to OC virtual FS
     const fileName = "input.step";
@@ -26,8 +19,21 @@ export async function POST(req: NextRequest) {
 
     const reader = new oc.STEPControl_Reader_1();
     reader.ReadFile(fileName);
-    reader.TransferRoots(new oc.Message_ProgressRange_1());
-    const shape = oc.TopoDS.Shape_1(reader.OneShape());
+    reader.TransferRoots();
+    const shape = reader.OneShape(); // already a TopoDS_Shape in this build; no cast needed
+
+    // Exact solid volume (mm^3, assuming the STEP file's native units are mm
+    // as elsewhere in this codebase) via OCCT's mass-property integration —
+    // used for BOM material-mass estimation. Best-effort: a binding mismatch
+    // here shouldn't break the viewer, which only needs the tessellation below.
+    let volumeMm3: number | null = null;
+    try {
+      const gprops = new oc.GProp_GProps_1();
+      oc.BRepGProp.VolumeProperties_1(shape, gprops, false, false, false);
+      volumeMm3 = gprops.Mass();
+    } catch (e) {
+      console.error("Volume computation failed (non-fatal):", e);
+    }
 
     // Tessellate each face
     const faces: Array<{
@@ -48,10 +54,10 @@ export async function POST(req: NextRequest) {
     while (explorer.More()) {
       const face = oc.TopoDS.Face_1(explorer.Current());
       const mesh = new oc.BRepMesh_IncrementalMesh_2(face, 0.1, false, 0.5, false);
-      mesh.Perform(new oc.Message_ProgressRange_1());
+      mesh.Perform();
 
       const location = new oc.TopLoc_Location_1();
-      const triangulation = oc.BRep_Tool.Triangulation(face, location, 0);
+      const triangulation = oc.BRep_Tool.Triangulation(face, location);
 
       if (!triangulation.IsNull()) {
         const tris = triangulation.get();
@@ -91,7 +97,7 @@ export async function POST(req: NextRequest) {
 
     oc.FS.unlink(`/${fileName}`);
 
-    return NextResponse.json({ faces, faceCount: faces.length });
+    return NextResponse.json({ faces, faceCount: faces.length, volumeMm3 });
   } catch (err: any) {
     console.error("STEP parse error:", err);
     return NextResponse.json({ error: err?.message ?? "Parse failed" }, { status: 500 });
