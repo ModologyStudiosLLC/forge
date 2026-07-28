@@ -24,7 +24,10 @@ interface FaceData {
   center: [number, number, number];
 }
 
-async function parseSTEP(buffer: ArrayBuffer, fileName: string): Promise<FaceData[]> {
+async function parseSTEP(
+  buffer: ArrayBuffer,
+  fileName: string,
+): Promise<{ faces: FaceData[]; volumeMm3: number | null }> {
   const formData = new FormData();
   formData.append("file", new Blob([buffer], { type: "application/octet-stream" }), fileName);
 
@@ -34,7 +37,7 @@ async function parseSTEP(buffer: ArrayBuffer, fileName: string): Promise<FaceDat
     throw new Error(err.error ?? `HTTP ${res.status}`);
   }
   const data = await res.json();
-  return data.faces as FaceData[];
+  return { faces: data.faces as FaceData[], volumeMm3: data.volumeMm3 ?? null };
 }
 
 function buildGeometry(face: FaceData): THREE.BufferGeometry {
@@ -195,7 +198,7 @@ function DropZone() {
 // ── Main viewer ───────────────────────────────────────────────────────────────
 
 export default function STEPViewer() {
-  const { stepBuffer, meshFaces, modelName, selectFace, setMeasurements, setDFMIssues } = useForgeStore();
+  const { stepBuffer, meshFaces, modelName, selectFace, setMeasurements, setDFMIssues, setVolumeMm3 } = useForgeStore();
   const [meshes, setMeshes] = useState<ParsedMesh[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,10 +232,13 @@ export default function STEPViewer() {
     setMeshes([]);
 
     parseSTEP(stepBuffer, modelName ?? "model.step")
-      .then(faces => applyFaces(faces))
+      .then(({ faces, volumeMm3 }) => {
+        applyFaces(faces);
+        setVolumeMm3(volumeMm3);
+      })
       .catch(e => setError(e.message ?? "Failed to parse STEP file."))
       .finally(() => setLoading(false));
-  }, [stepBuffer, modelName, applyFaces]);
+  }, [stepBuffer, modelName, applyFaces, setVolumeMm3]);
 
   useEffect(() => {
     if (!meshFaces || meshFaces === lastMeshFaces.current) return;

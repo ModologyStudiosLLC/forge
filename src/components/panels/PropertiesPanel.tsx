@@ -15,6 +15,15 @@ const SEVERITY_LABEL = {
   info: "Info",
 } as const;
 
+// Mirrors the MATERIALS keys/labels in src/app/api/cad/bom/route.ts.
+const MATERIAL_OPTIONS = [
+  { value: "aluminum-6061", label: "Aluminum 6061" },
+  { value: "steel-1018", label: "Mild Steel 1018" },
+  { value: "stainless-304", label: "Stainless Steel 304" },
+  { value: "stainless-17-4ph", label: "Stainless Steel 17-4PH" },
+  { value: "titanium-ti6al4v", label: "Titanium Ti-6Al-4V" },
+] as const;
+
 export default function PropertiesPanel() {
   const {
     selectedFace,
@@ -25,6 +34,12 @@ export default function PropertiesPanel() {
     modelName,
     aiSuggestions,
     setAISuggestion,
+    volumeMm3,
+    material,
+    setMaterial,
+    bom,
+    setBOM,
+    meshFaces,
   } = useForgeStore();
 
   const dims = selectedFaceId ? measurements[selectedFaceId] : null;
@@ -36,6 +51,27 @@ export default function PropertiesPanel() {
   const [loadingFaceId, setLoadingFaceId] = useState<string | null>(null);
   const lastFetchedRef = useRef<string | null>(null);
   const aiLoading = loadingFaceId === selectedFaceId;
+  const [bomLoading, setBomLoading] = useState(false);
+  const [bomError, setBomError] = useState<string | null>(null);
+
+  // Auto-calculate BOM whenever the loaded part's volume or chosen material changes
+  useEffect(() => {
+    if (!volumeMm3) return;
+    setBomLoading(true);
+    setBomError(null);
+    fetch("/api/cad/bom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ volumeMm3, material }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        setBOM(data);
+      })
+      .catch(e => setBomError(e.message ?? "BOM calculation failed"))
+      .finally(() => setBomLoading(false));
+  }, [volumeMm3, material]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fetch suggestion when a face with dimensions is selected
   useEffect(() => {
@@ -174,6 +210,62 @@ export default function PropertiesPanel() {
           }}>
             Click a face to inspect
           </div>
+        )}
+
+        {/* BOM — model-level, independent of face selection */}
+        {modelName && (
+          <section style={{ marginBottom: "16px" }}>
+            <div style={sectionHeader}>Bill of Materials</div>
+            <div style={{ marginBottom: "8px" }}>
+              <select
+                value={material}
+                onChange={e => setMaterial(e.target.value)}
+                style={{
+                  width: "100%",
+                  background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "4px",
+                  color: "var(--text)",
+                  fontSize: "11px",
+                  padding: "5px 6px",
+                }}
+              >
+                {MATERIAL_OPTIONS.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {!volumeMm3 ? (
+              <div style={{ color: "var(--text-muted)", fontSize: "11px", fontStyle: "italic" }}>
+                {meshFaces
+                  ? "BOM needs an exact solid volume — not available for image→3D meshes yet."
+                  : "Volume unavailable for this model."}
+              </div>
+            ) : bomLoading ? (
+              <div style={{ color: "var(--text-muted)", fontSize: "11px" }}>Calculating...</div>
+            ) : bomError ? (
+              <div style={{ color: "var(--dfm-fail)", fontSize: "11px" }}>{bomError}</div>
+            ) : bom ? (
+              <>
+                <div style={propRow}>
+                  <span style={propLabel}>Volume</span>
+                  <span style={propValue}>{(bom.volumeMm3 / 1000).toFixed(2)} cm³</span>
+                </div>
+                <div style={propRow}>
+                  <span style={propLabel}>Mass</span>
+                  <span style={propValue}>{bom.massKg.toFixed(3)} kg</span>
+                </div>
+                <div style={propRow}>
+                  <span style={propLabel}>Material cost</span>
+                  <span style={propValue}>${bom.materialCostUsd.toFixed(2)}</span>
+                </div>
+                <div style={{ color: "var(--text-muted)", fontSize: "10px", marginTop: "6px", lineHeight: "1.5" }}>
+                  {bom.priceNote}
+                </div>
+              </>
+            ) : null}
+          </section>
         )}
 
         {/* DFM on selected face */}

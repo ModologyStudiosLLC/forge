@@ -15,6 +15,17 @@ export interface DFMIssue {
   faceId?: string;
 }
 
+export interface BOMResult {
+  material: string;
+  materialLabel: string;
+  volumeMm3: number;
+  massKg: number;
+  pricePerKgUsd: number;
+  materialCostUsd: number;
+  priceSource: string;
+  priceNote: string;
+}
+
 export interface MeshFace {
   id: string;
   positions: number[];
@@ -41,6 +52,11 @@ interface ForgeState {
   // DFM
   dfmIssues: DFMIssue[];
 
+  // BOM
+  volumeMm3: number | null;   // exact solid volume from OCCT; null for image->3D meshes
+  material: string;
+  bom: BOMResult | null;
+
   // Push/pull
   pushPullActive: boolean;
 
@@ -57,6 +73,9 @@ interface ForgeState {
   setPushPullActive: (active: boolean) => void;
   setDFMIssues: (issues: DFMIssue[]) => void;
   setAISuggestion: (faceId: string, text: string) => void;
+  setVolumeMm3: (v: number | null) => void;
+  setMaterial: (material: string) => void;
+  setBOM: (bom: BOMResult | null) => void;
   clearModel: () => void;
 }
 
@@ -72,6 +91,9 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
   dfmIssues: [],
   pushPullActive: false,
   aiSuggestions: {},
+  volumeMm3: null,
+  material: "stainless-17-4ph", // matches Toolbar's existing Alloy quote default
+  bom: null,
 
   loadStepFile: (file: File) => {
     file.arrayBuffer().then(buf => get().loadStepBuffer(buf, file.name));
@@ -90,6 +112,8 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       selectedFaceId: null,
       selectedFace: null,
       dfmIssues: [],
+      volumeMm3: null,
+      bom: null,
     });
   },
 
@@ -104,6 +128,8 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       selectedFaceId: null,
       selectedFace: null,
       dfmIssues: [],
+      volumeMm3: null, // image->3D meshes don't have an exact CAD volume
+      bom: null,
     });
   },
 
@@ -126,6 +152,10 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
     aiSuggestions: { ...state.aiSuggestions, [faceId]: text },
   })),
 
+  setVolumeMm3: (v) => set({ volumeMm3: v }),
+  setMaterial: (material) => set({ material, bom: null }), // stale bom would be wrong for the new material
+  setBOM: (bom) => set({ bom }),
+
   clearModel: () => {
     const prev = get().stepUrl;
     if (prev) URL.revokeObjectURL(prev);
@@ -139,6 +169,8 @@ export const useForgeStore = create<ForgeState>((set, get) => ({
       measurements: {},
       dfmIssues: [],
       aiSuggestions: {},
+      volumeMm3: null,
+      bom: null,
     });
   },
 }));
