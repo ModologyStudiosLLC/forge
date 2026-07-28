@@ -15,13 +15,35 @@ const SEVERITY_LABEL = {
   info: "Info",
 } as const;
 
-// Mirrors the MATERIALS keys/labels in src/app/api/cad/bom/route.ts.
-const MATERIAL_OPTIONS = [
-  { value: "aluminum-6061", label: "Aluminum 6061" },
-  { value: "steel-1018", label: "Mild Steel 1018" },
-  { value: "stainless-304", label: "Stainless Steel 304" },
-  { value: "stainless-17-4ph", label: "Stainless Steel 17-4PH" },
-  { value: "titanium-ti6al4v", label: "Titanium Ti-6Al-4V" },
+// Mirrors the MATERIALS keys/labels/groups in src/app/api/cad/bom/route.ts.
+const MATERIAL_GROUPS = [
+  {
+    label: "Wrought (CNC)",
+    options: [
+      { value: "aluminum-6061", label: "Aluminum 6061" },
+      { value: "steel-1018", label: "Mild Steel 1018" },
+      { value: "stainless-304", label: "Stainless Steel 304" },
+      { value: "stainless-17-4ph", label: "Stainless Steel 17-4PH" },
+      { value: "titanium-ti6al4v", label: "Titanium Ti-6Al-4V" },
+    ],
+  },
+  {
+    label: "Metal Binder Jet",
+    options: [
+      { value: "bj-316l", label: "316L Stainless" },
+      { value: "bj-17-4ph", label: "17-4PH Stainless" },
+      { value: "bj-420-bronze", label: "420 Stainless + Bronze" },
+      { value: "bj-tungsten-carbide", label: "Tungsten Carbide-Cobalt" },
+    ],
+  },
+  {
+    label: "SLA/DLP Resin",
+    options: [
+      { value: "resin-standard", label: "Standard Resin" },
+      { value: "resin-tough", label: "Tough/Durable Resin" },
+      { value: "resin-castable", label: "Castable Resin (investment casting)" },
+    ],
+  },
 ] as const;
 
 export default function PropertiesPanel() {
@@ -230,8 +252,12 @@ export default function PropertiesPanel() {
                   padding: "5px 6px",
                 }}
               >
-                {MATERIAL_OPTIONS.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
+                {MATERIAL_GROUPS.map(group => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>

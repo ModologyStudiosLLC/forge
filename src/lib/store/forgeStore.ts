@@ -18,6 +18,7 @@ export interface DFMIssue {
 export interface BOMResult {
   material: string;
   materialLabel: string;
+  process: string;
   volumeMm3: number;
   massKg: number;
   pricePerKgUsd: number;
