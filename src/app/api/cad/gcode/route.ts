@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // Forwards to the local freecad-poc service (headless FreeCAD Path/CAM),
 // same pattern as image23d/nl2step. Fixed default roughing preset — no
-// tool/stock parameter UI yet, see project_forge_build_status memory.
+// tool/stock parameter UI yet.
 const FREECAD_SERVICE_URL = "http://localhost:8101/gcode";
 
 export async function POST(req: NextRequest) {
