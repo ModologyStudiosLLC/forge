@@ -17,7 +17,7 @@ type SendState =
   | { status: "error"; message: string };
 
 export default function Toolbar() {
-  const { selectionMode, setSelectionMode, pushPullActive, setPushPullActive, modelName, stepBuffer } = useForgeStore();
+  const { selectionMode, setSelectionMode, modelName, stepBuffer } = useForgeStore();
   const [send, setSend] = useState<SendState>({ status: "idle" });
 
   const canSend = !!stepBuffer && !!modelName && send.status !== "sending";
@@ -100,18 +100,19 @@ export default function Toolbar() {
 
       <div style={{ width: "1px", height: "20px", background: "var(--border)" }} />
 
-      {/* Push/pull toggle */}
+      {/* Push/pull toggle — disabled: handle doesn't mutate geometry yet */}
       <button
-        onClick={() => setPushPullActive(!pushPullActive)}
+        disabled
+        title="Push/Pull — coming soon, not wired to geometry yet"
         style={{
           padding: "3px 10px",
           borderRadius: "4px",
-          border: "1px solid",
-          borderColor: pushPullActive ? "var(--measure)" : "var(--border)",
-          background: pushPullActive ? "rgba(163,230,53,0.08)" : "transparent",
-          color: pushPullActive ? "var(--measure)" : "var(--text-muted)",
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--text-muted)",
+          opacity: 0.4,
           fontSize: "11px",
-          cursor: "pointer",
+          cursor: "not-allowed",
         }}
       >
         Push / Pull
