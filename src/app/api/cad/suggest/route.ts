@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+type AllowedImageType = (typeof ALLOWED_IMAGE_TYPES)[number];
+// ~5 MB decoded — Claude's per-image limit.
+const MAX_TRACE_BASE64_CHARS = Math.ceil((5 * 1024 * 1024 * 4) / 3);
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -17,6 +22,18 @@ export async function POST(req: NextRequest) {
 
     if (!faceId || !dims || !face) {
       return NextResponse.json({ error: "Missing required fields: faceId, dims, face" }, { status: 400 });
+    }
+    if (traceBase64) {
+      if (!traceMimeType || !ALLOWED_IMAGE_TYPES.includes(traceMimeType as AllowedImageType)) {
+        return NextResponse.json({ error: "Unsupported trace image type" }, { status: 415 });
+      }
+      if (traceBase64.length > MAX_TRACE_BASE64_CHARS) {
+        return NextResponse.json({ error: "Trace image too large (max 5 MB)" }, { status: 413 });
+      }
+    }
+    // modelName and faceId are interpolated into the prompt; keep them short.
+    if (faceId.length > 64 || (modelName && modelName.length > 200)) {
+      return NextResponse.json({ error: "faceId or modelName too long" }, { status: 400 });
     }
 
     const dimSummary = `${dims.width.toFixed(2)} mm W × ${dims.height.toFixed(2)} mm H × ${dims.depth.toFixed(2)} mm D`;
@@ -51,7 +68,7 @@ export async function POST(req: NextRequest) {
         type: "image",
         source: {
           type: "base64",
-          media_type: traceMimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+          media_type: traceMimeType as AllowedImageType,
           data: traceBase64,
         },
       });

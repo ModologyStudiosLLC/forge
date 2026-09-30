@@ -7,9 +7,15 @@ import path from "node:path";
 // Next.js/Turbopack's Node.js server runtime. This reads the .wasm binary
 // straight off disk and hands it to Emscripten via `wasmBinary`, skipping
 // locateFile/fetch entirely.
-let ocInstance: any = null;
+// opencascade.js ships no TypeScript bindings for its ~thousands of generated
+// OCCT classes, so the instance is deliberately untyped. Keep `any` confined to
+// this one alias rather than scattering it through callers.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type OpenCascade = any;
 
-export async function getOpenCascade() {
+let ocInstance: OpenCascade = null;
+
+export async function getOpenCascade(): Promise<OpenCascade> {
   if (ocInstance) return ocInstance;
 
   const wasmPath = path.join(
@@ -19,7 +25,7 @@ export async function getOpenCascade() {
   const wasmBinary = fs.readFileSync(wasmPath);
 
   const { default: opencascade } = await import("opencascade.js/dist/opencascade.wasm.js");
-  const oc = await new (opencascade as any)({ wasmBinary });
+  const oc: OpenCascade = await new opencascade({ wasmBinary });
 
   if (process.env.OC_DEBUG === "TopoDS_MEMBERS") {
     console.error("[OC_DEBUG] oc.TopoDS own props:", Object.getOwnPropertyNames(oc.TopoDS));

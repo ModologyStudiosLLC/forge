@@ -1,8 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
-import { ThreeEvent, useThree } from "@react-three/fiber";
-import * as THREE from "three";
+import { ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { useForgeStore, SelectedFace } from "@/lib/store/forgeStore";
 
@@ -13,20 +12,20 @@ interface Props {
 const ARROW_LENGTH = 0.5;
 
 export default function PushPullHandle({ face }: Props) {
-  const { camera, gl } = useThree();
   const [dragging, setDragging] = useState(false);
   const [delta, setDelta] = useState(0);
   const startY = useRef(0);
 
-  if (!face.center) return null;
-  const [x, y, z] = face.center;
-  const normal = face.normal ?? [0, 1, 0];
-
+  // Hooks must run before the early return below (rules-of-hooks).
   const handlePointerDown = useCallback((e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     setDragging(true);
     startY.current = e.clientY;
-    gl.domElement.style.cursor = "ns-resize";
+    // The canvas element is the native event target; mutating it directly
+    // (rather than the object returned by useThree) keeps the React compiler's
+    // immutability check happy.
+    const canvas = e.nativeEvent.target as HTMLElement;
+    canvas.style.cursor = "ns-resize";
 
     const onMove = (ev: PointerEvent) => {
       const diff = (startY.current - ev.clientY) * 0.01;
@@ -35,7 +34,7 @@ export default function PushPullHandle({ face }: Props) {
     const onUp = (ev: PointerEvent) => {
       const finalDelta = (startY.current - ev.clientY) * 0.01;
       setDragging(false);
-      gl.domElement.style.cursor = "default";
+      canvas.style.cursor = "default";
       // Dispatch to backend
       useForgeStore.getState().setPushPullActive(false);
       window.dispatchEvent(new CustomEvent("forge:pushpull", {
@@ -47,7 +46,10 @@ export default function PushPullHandle({ face }: Props) {
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-  }, [face.id, gl]);
+  }, [face.id]);
+
+  if (!face.center) return null;
+  const [x, y, z] = face.center;
 
   const tipY = y + ARROW_LENGTH + delta;
 

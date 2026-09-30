@@ -7,7 +7,6 @@ import {
   Grid,
   GizmoHelper,
   GizmoViewport,
-  Html,
 } from "@react-three/drei";
 import * as THREE from "three";
 import { useForgeStore } from "@/lib/store/forgeStore";
@@ -148,7 +147,7 @@ function SceneContent({
         fadeDistance={150} position={[0, -0.01, 0]}
       />
 
-      {meshes.map(({ geometry, faceId, center }) => (
+      {meshes.map(({ geometry, faceId }) => (
         <FaceMesh
           key={faceId}
           geo={geometry}
@@ -195,6 +194,14 @@ function DropZone() {
   );
 }
 
+function toParsedMeshes(faces: FaceData[]): ParsedMesh[] {
+  return faces.map(f => ({
+    geometry: buildGeometry(f),
+    faceId: f.id,
+    center: f.center,
+  }));
+}
+
 // ── Main viewer ───────────────────────────────────────────────────────────────
 
 export default function STEPViewer() {
@@ -203,17 +210,31 @@ export default function STEPViewer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastBuffer = useRef<ArrayBuffer | null>(null);
-  const lastMeshFaces = useRef<FaceData[] | null>(null);
 
-  const applyFaces = useCallback((faces: FaceData[]) => {
-    const parsed: ParsedMesh[] = faces.map(f => ({
-      geometry: buildGeometry(f),
-      faceId: f.id,
-      center: f.center,
-    }));
-    setMeshes(parsed);
+  // Reset view state when a new model arrives. Done during render (React's
+  // "adjust state when a prop changes" pattern) rather than synchronously in
+  // an effect, which triggers a cascading extra render.
+  // Start from null so a model already in the store on mount is picked up.
+  const [prevStepBuffer, setPrevStepBuffer] = useState<ArrayBuffer | null>(null);
+  const [prevMeshFaces, setPrevMeshFaces] = useState<FaceData[] | null>(null);
+  if (stepBuffer !== prevStepBuffer) {
+    setPrevStepBuffer(stepBuffer);
+    if (stepBuffer) {
+      setLoading(true);
+      setError(null);
+      setMeshes([]);
+    }
+  }
+  if (meshFaces !== prevMeshFaces) {
+    setPrevMeshFaces(meshFaces);
+    if (meshFaces) {
+      setError(null);
+      setMeshes(toParsedMeshes(meshFaces));
+    }
+  }
 
-    // DFM is a secondary pass — a failure here shouldn't break the viewer.
+  // DFM is a secondary pass — a failure here shouldn't break the viewer.
+  const runDFM = useCallback((faces: FaceData[]) => {
     fetch("/api/cad/dfm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -227,26 +248,20 @@ export default function STEPViewer() {
   useEffect(() => {
     if (!stepBuffer || stepBuffer === lastBuffer.current) return;
     lastBuffer.current = stepBuffer;
-    setLoading(true);
-    setError(null);
-    setMeshes([]);
 
     parseSTEP(stepBuffer, modelName ?? "model.step")
       .then(({ faces, volumeMm3 }) => {
-        applyFaces(faces);
+        setMeshes(toParsedMeshes(faces));
+        runDFM(faces);
         setVolumeMm3(volumeMm3);
       })
       .catch(e => setError(e.message ?? "Failed to parse STEP file."))
       .finally(() => setLoading(false));
-  }, [stepBuffer, modelName, applyFaces, setVolumeMm3]);
+  }, [stepBuffer, modelName, runDFM, setVolumeMm3]);
 
   useEffect(() => {
-    if (!meshFaces || meshFaces === lastMeshFaces.current) return;
-    lastMeshFaces.current = meshFaces;
-    setError(null);
-    setMeshes([]);
-    applyFaces(meshFaces);
-  }, [meshFaces, applyFaces]);
+    if (meshFaces) runDFM(meshFaces);
+  }, [meshFaces, runDFM]);
 
   const handleFaceClick = useCallback(
     (faceId: string, geo: THREE.BufferGeometry, center: [number, number, number]) => {

@@ -52,7 +52,13 @@ Environment variables:
 | `ANTHROPIC_API_KEY` | AI face suggestions, natural language → STEP | — |
 | `CADQUERY_API_URL` | Natural language → STEP | `http://localhost:8097` |
 | `TRIPOSR_API_URL` | Image → 3D | `http://localhost:8098` |
+| `FREECAD_API_URL` | G-code generation | `http://localhost:8101` |
 | `ALLOY_API_URL` | Alloy quoting | `http://localhost:8000` |
+| `ALLOY_EMAIL` / `ALLOY_PASSWORD` | Alloy quoting — an Alloy staff account FORGE logs in as (create with Alloy's `create_admin.py`) | — |
+| `FORGE_BASIC_AUTH` | **Required for any non-local deploy.** `user:password` for HTTP Basic auth over the whole app, including the paid Claude routes | unset = open |
+
+STEP files sent to Alloy are tessellated to STL by FORGE first — Alloy's
+trimesh-based analysis can't read STEP.
 
 ## Status
 

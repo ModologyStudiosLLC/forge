@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const CADQUERY_URL = process.env.CADQUERY_API_URL ?? "http://localhost:8097";
+// Caps paid-API spend per request and keeps prompts to part descriptions.
+const MAX_PROMPT_CHARS = 2000;
 
 const SYSTEM_PROMPT = `You write CadQuery Python scripts that build parametric solid geometry.
 
@@ -17,6 +19,12 @@ export async function POST(req: NextRequest) {
     const { prompt } = (await req.json()) as { prompt?: string };
     if (!prompt?.trim()) {
       return NextResponse.json({ error: "prompt required" }, { status: 400 });
+    }
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return NextResponse.json(
+        { error: `prompt too long (max ${MAX_PROMPT_CHARS} characters)` },
+        { status: 400 },
+      );
     }
 
     const message = await client.messages.create({
@@ -58,6 +66,6 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error("[nl2step]", err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: "Natural-language generation failed" }, { status: 500 });
   }
 }
