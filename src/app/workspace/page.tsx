@@ -33,6 +33,7 @@ type ImageUploadState =
 type NL2StepState =
   | { status: "idle" }
   | { status: "generating" }
+  | { status: "done"; attempts: number; volumeCm3: number; bboxMm: number[] }
   | { status: "error"; message: string };
 
 function base64ToArrayBuffer(b64: string): ArrayBuffer {
@@ -71,7 +72,11 @@ export default function WorkspacePage() {
       const buf = base64ToArrayBuffer(data.step_b64);
       const name = nlPrompt.trim().slice(0, 40).replace(/[^a-z0-9]+/gi, "_") + ".step";
       useForgeStore.getState().loadStepBuffer(buf, name);
-      setNl2step({ status: "idle" });
+      setNl2step(
+        data.metrics
+          ? { status: "done", attempts: data.attempts ?? 1, volumeCm3: data.metrics.volume_mm3 / 1000, bboxMm: data.metrics.bbox_mm }
+          : { status: "idle" },
+      );
     } catch {
       setNl2step({ status: "error", message: "Could not reach nl2step" });
       setTimeout(() => setNl2step({ status: "idle" }), 5000);
@@ -244,6 +249,12 @@ export default function WorkspacePage() {
           {nl2step.status === "error" && (
             <div style={{ fontSize: "11px", color: "var(--dfm-fail)" }}>
               {nl2step.message}
+            </div>
+          )}
+          {nl2step.status === "done" && (
+            <div style={{ fontSize: "11px", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+              {nl2step.bboxMm.join(" × ")} mm · {nl2step.volumeCm3.toFixed(1)} cm³ ·{" "}
+              {nl2step.attempts === 1 ? "first try" : `${nl2step.attempts} attempts`}
             </div>
           )}
 

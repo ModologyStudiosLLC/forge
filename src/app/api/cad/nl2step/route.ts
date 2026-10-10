@@ -1,4 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -49,6 +52,22 @@ bore = cq.Workplane("XY").circle(pipe_id / 2).extrude(flange_t + pipe_len)
 body = flange.union(pipe).cut(bore)
 result = body.faces("<Z").workplane().polarArray(bolt_pcd / 2, 0, 360, bolt_count).hole(bolt_d)`;
 
+// One JSON file per request (success or failure): prompt, model, every script tried and the
+// error it produced. Failures are the useful part — they show which prompt rules to add next.
+// Best-effort: a logging problem must never fail a generation.
+const RUN_LOG_DIR = process.env.NL2STEP_RUN_LOG_DIR ?? path.join(process.cwd(), ".forge-runs");
+
+async function logRun(entry: Record<string, unknown>): Promise<string> {
+  const runId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`;
+  try {
+    await mkdir(RUN_LOG_DIR, { recursive: true });
+    await writeFile(path.join(RUN_LOG_DIR, `${runId}.json`), JSON.stringify({ run_id: runId, model: MODEL, ...entry }, null, 2));
+  } catch (err) {
+    console.error("[nl2step] could not write run log", err);
+  }
+  return runId;
+}
+
 function extractScript(message: Anthropic.Message): string {
   const text = message.content
     .filter(b => b.type === "text")
@@ -72,6 +91,7 @@ export async function POST(req: NextRequest) {
     const messages: Anthropic.MessageParam[] = [{ role: "user", content: prompt }];
     let script = "";
     let lastError = "CadQuery generation failed";
+    const tries: { script: string; error?: string }[] = [];
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const message = await client.messages.create({
@@ -90,11 +110,17 @@ export async function POST(req: NextRequest) {
       const cqData = await cqRes.json();
 
       if (cqRes.ok) {
-        return NextResponse.json({ step_b64: cqData.step_b64, script, attempts: attempt });
+        tries.push({ script });
+        const runId = await logRun({ prompt, success: true, attempts: attempt, metrics: cqData.metrics, tries });
+        return NextResponse.json({
+          step_b64: cqData.step_b64, script, attempts: attempt, metrics: cqData.metrics, run_id: runId,
+        });
       }
       lastError = cqData.detail ?? lastError;
+      tries.push({ script, error: lastError });
       if (cqRes.status !== 400) {
-        return NextResponse.json({ error: lastError, script }, { status: cqRes.status });
+        const runId = await logRun({ prompt, success: false, attempts: attempt, tries });
+        return NextResponse.json({ error: lastError, script, run_id: runId }, { status: cqRes.status });
       }
 
       messages.push(
@@ -106,8 +132,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const runId = await logRun({ prompt, success: false, attempts: MAX_ATTEMPTS, tries });
     return NextResponse.json(
-      { error: `Failed after ${MAX_ATTEMPTS} attempts. Last error: ${lastError}`, script },
+      { error: `Failed after ${MAX_ATTEMPTS} attempts. Last error: ${lastError}`, script, run_id: runId },
       { status: 400 },
     );
   } catch (err) {

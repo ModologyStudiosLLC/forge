@@ -42,3 +42,6 @@ next-env.d.ts
 
 # OpenCascade WASM (63MB — copy from node_modules/opencascade.js/dist/)
 public/wasm/
+
+# nl2step per-request run logs
+.forge-runs/
