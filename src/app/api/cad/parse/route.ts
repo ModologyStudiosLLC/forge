@@ -1,107 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOpenCascade } from "@/lib/opencascade";
+import { tessellateStep } from "@/lib/step";
 
 // OpenCascade runs server-side (Node.js) — it uses require("fs") internally
 // and cannot be bundled for the browser.
+
+// Upper bound on uploaded STEP size. OCCT tessellation is CPU- and
+// memory-heavy and runs on the request thread, so an unbounded upload is an
+// easy way to wedge the server.
+const MAX_STEP_BYTES = 50 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const oc = await getOpenCascade();
-
-    // Write STEP to OC virtual FS
-    const fileName = "input.step";
-    oc.FS.createDataFile("/", fileName, buffer, true, true, true);
-
-    const reader = new oc.STEPControl_Reader_1();
-    reader.ReadFile(fileName);
-    reader.TransferRoots();
-    const shape = reader.OneShape(); // already a TopoDS_Shape in this build; no cast needed
-
-    // Exact solid volume (mm^3, assuming the STEP file's native units are mm
-    // as elsewhere in this codebase) via OCCT's mass-property integration —
-    // used for BOM material-mass estimation. Best-effort: a binding mismatch
-    // here shouldn't break the viewer, which only needs the tessellation below.
-    let volumeMm3: number | null = null;
-    try {
-      const gprops = new oc.GProp_GProps_1();
-      oc.BRepGProp.VolumeProperties_1(shape, gprops, false, false, false);
-      volumeMm3 = gprops.Mass();
-    } catch (e) {
-      console.error("Volume computation failed (non-fatal):", e);
+    if (file.size > MAX_STEP_BYTES) {
+      return NextResponse.json(
+        { error: `STEP file too large (max ${MAX_STEP_BYTES / 1024 / 1024} MB)` },
+        { status: 413 },
+      );
     }
 
-    // Tessellate each face
-    const faces: Array<{
-      id: string;
-      positions: number[];
-      normals: number[];
-      indices: number[];
-      center: [number, number, number];
-    }> = [];
+    const { faces, volumeMm3 } = await tessellateStep(Buffer.from(await file.arrayBuffer()));
 
-    const explorer = new oc.TopExp_Explorer_2(
-      shape,
-      oc.TopAbs_ShapeEnum.TopAbs_FACE,
-      oc.TopAbs_ShapeEnum.TopAbs_SHAPE
-    );
-
-    let faceIndex = 0;
-    while (explorer.More()) {
-      const face = oc.TopoDS.Face_1(explorer.Current());
-      const mesh = new oc.BRepMesh_IncrementalMesh_2(face, 0.1, false, 0.5, false);
-      mesh.Perform();
-
-      const location = new oc.TopLoc_Location_1();
-      const triangulation = oc.BRep_Tool.Triangulation(face, location);
-
-      if (!triangulation.IsNull()) {
-        const tris = triangulation.get();
-        const nbNodes = tris.NbNodes();
-        const nbTriangles = tris.NbTriangles();
-
-        const positions: number[] = [];
-        const normals: number[] = [];
-        const indices: number[] = [];
-        let cx = 0, cy = 0, cz = 0;
-
-        for (let i = 1; i <= nbNodes; i++) {
-          const node = tris.Node(i);
-          positions.push(node.X(), node.Y(), node.Z());
-          normals.push(0, 1, 0);
-          cx += node.X(); cy += node.Y(); cz += node.Z();
-        }
-        cx /= nbNodes; cy /= nbNodes; cz /= nbNodes;
-
-        for (let i = 1; i <= nbTriangles; i++) {
-          const tri = tris.Triangle(i);
-          indices.push(tri.Value(1) - 1, tri.Value(2) - 1, tri.Value(3) - 1);
-        }
-
-        faces.push({
-          id: `face_${faceIndex}`,
-          positions,
-          normals,
-          indices,
-          center: [cx, cy, cz],
-        });
-      }
-
-      faceIndex++;
-      explorer.Next();
+    if (faces.length === 0) {
+      return NextResponse.json(
+        { error: "No geometry found — is this a valid STEP file?" },
+        { status: 422 },
+      );
     }
-
-    oc.FS.unlink(`/${fileName}`);
 
     return NextResponse.json({ faces, faceCount: faces.length, volumeMm3 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("STEP parse error:", err);
-    return NextResponse.json({ error: err?.message ?? "Parse failed" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Parse failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
-export const config = { api: { bodyParser: false } };

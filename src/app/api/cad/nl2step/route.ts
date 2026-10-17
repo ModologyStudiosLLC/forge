@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const CADQUERY_URL = process.env.CADQUERY_API_URL ?? "http://localhost:8097";
+// Caps paid-API spend per request and keeps prompts to part descriptions.
+const MAX_PROMPT_CHARS = 2000;
 
 const MODEL = process.env.NL2STEP_MODEL ?? "claude-sonnet-5-5";
 const MAX_ATTEMPTS = 3;
@@ -84,6 +86,12 @@ export async function POST(req: NextRequest) {
     if (!prompt?.trim()) {
       return NextResponse.json({ error: "prompt required" }, { status: 400 });
     }
+    if (prompt.length > MAX_PROMPT_CHARS) {
+      return NextResponse.json(
+        { error: `prompt too long (max ${MAX_PROMPT_CHARS} characters)` },
+        { status: 400 },
+      );
+    }
 
     // Generate, run, and on a script failure feed the error back to the model so it
     // can correct itself. Only a 400 from the CadQuery service (the script's fault)
@@ -146,6 +154,6 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error("[nl2step]", err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: "Natural-language generation failed" }, { status: 500 });
   }
 }
